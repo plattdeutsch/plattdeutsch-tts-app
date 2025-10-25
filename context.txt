@@ -1,0 +1,154 @@
+PROJECT TITLE:
+Plattdeutsch TTS App (Coqui-TTS + Flask + AWS Elastic Beanstalk + GitHub CI/CD)
+
+PROJECT GOAL:
+Develop, test, and deploy a minimal German Text-to-Speech web application using a pretrained
+Coqui-TTS model (`tts_models/de/thorsten/tacotron2-DDC`). The app allows a user to type text,
+convert it into speech (MP3), and download the generated file. Output files are stored in an
+AWS S3 bucket with presigned download links. Deployment is automated via GitHub Actions to
+AWS Elastic Beanstalk in region eu-central-1 (Frankfurt).
+
+---------------------------------------------------------------------------
+DEVELOPMENT OBJECTIVES:
+1. Build a Flask web app with a simple HTML UI (text area + button + result link).
+2. Use Coqui TTS locally in inference mode to synthesize speech.
+3. Convert the waveform to MP3 in-memory using `lameenc` (no ffmpeg dependency).
+4. Upload generated MP3s to Amazon S3 and return presigned links.
+5. Expose a /health endpoint returning model info.
+6. Configure deployment for AWS Elastic Beanstalk (Python 3.10).
+7. Automate CI/CD using GitHub Actions workflow (`deploy-eb.yml`).
+8. Maintain environment variables in `.ebextensions/01_env.config`.
+
+---------------------------------------------------------------------------
+RUNTIME ENVIRONMENT:
+- Python 3.10
+- Flask 3.0.3
+- TTS 0.22.0
+- numpy 1.26.4
+- lameenc 1.6.1
+- boto3 1.35.0
+- gunicorn 22.0.0
+- Region: eu-central-1 (Frankfurt)
+- AWS S3 Bucket: plattdeutsch-tts-audio
+- Elastic Beanstalk App: plattdeutsch-tts-app
+- EB Environment: plattdeutsch-tts-env
+- GitHub Repo: https://github.com/plattdeutsch/plattdeutsch-tts-app.git
+
+---------------------------------------------------------------------------
+DIRECTORY STRUCTURE:
+
+plattdeutsch-tts-app/
+│
+├── app.py                        # Flask backend and TTS logic
+├── requirements.txt              # Dependencies
+├── runtime.txt                   # Python runtime version
+├── Procfile                      # Gunicorn start command
+├── .ebextensions/
+│   └── 01_env.config             # Elastic Beanstalk environment variables
+│
+├── templates/
+│   └── index.html                # Simple German front-end form
+│
+├── static/                       # (empty)
+│
+├── .github/
+│   └── workflows/
+│       └── deploy-eb.yml         # GitHub Actions CI/CD workflow
+│
+└── README.md
+
+---------------------------------------------------------------------------
+KEY CODE COMPONENTS SUMMARY:
+
+app.py
+------
+• Initializes Coqui TTS model:
+    MODEL_NAME = "tts_models/de/thorsten/tacotron2-DDC"
+• Converts waveform → MP3 bytes using lameenc.
+• Uploads MP3 to S3 bucket (if USE_S3 = true).
+• Returns presigned download URL (1 hour expiry).
+• Flask endpoints:
+    - `/` (GET) → HTML form
+    - `/synthesize` (POST) → generate & return MP3/URL
+    - `/health` (GET) → status JSON
+
+index.html
+-----------
+Simple responsive form in German:
+<textarea name="text"></textarea> + "Sprachdatei erzeugen" button.
+If JSON response → display link; otherwise trigger direct file download.
+
+.ebextensions/01_env.config
+----------------------------
+Sets:
+    AWS_REGION=eu-central-1
+    TTS_MODEL_NAME=tts_models/de/thorsten/tacotron2-DDC
+    USE_S3=true
+    S3_BUCKET_NAME=plattdeutsch-tts-audio
+
+.github/workflows/deploy-eb.yml
+-------------------------------
+- Trigger: push to main branch.
+- Steps:
+    1. Checkout
+    2. Setup Python 3.10
+    3. Install dependencies
+    4. Configure AWS credentials from GitHub Secrets:
+         AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+    5. Create EB application version and update environment
+- Outputs deployment logs in GitHub Actions tab.
+
+---------------------------------------------------------------------------
+LOCAL COMMANDS:
+# Run locally
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python app.py
+# Visit http://localhost:5000
+
+---------------------------------------------------------------------------
+AWS SETUP:
+1. Create S3 bucket “plattdeutsch-tts-audio” in eu-central-1.
+2. Create Elastic Beanstalk application “plattdeutsch-tts-app”.
+3. Create environment “plattdeutsch-tts-env” (Python 3.10 platform).
+4. Create IAM user with:
+     - ElasticBeanstalkFullAccess
+     - AmazonS3FullAccess
+5. Store IAM keys in GitHub Secrets.
+
+---------------------------------------------------------------------------
+CI/CD:
+• Push to `main` → GitHub Actions deploys new EB version.
+• EB pulls code, installs requirements, runs `gunicorn app:app`.
+• MP3 files stored in S3 with presigned download links.
+
+---------------------------------------------------------------------------
+NEXT FEATURES (OPTIONAL):
+• Add CloudWatch logging of requests & latency.
+• Add authentication (Flask-Login / Cognito).
+• Multi-voice model selection dropdown.
+• Dockerize for ECS or App Runner.
+• Train custom Coqui TTS model later and replace default weights.
+
+---------------------------------------------------------------------------
+CODING GUIDELINES FOR AI AGENTS:
+• Use Python 3.10 syntax only.
+• Never add ffmpeg or system-dependent libraries.
+• Keep imports minimal; respect requirements.txt.
+• Ensure Flask app remains stateless (S3 handles files).
+• When editing deployment scripts, preserve indentation and YAML validity.
+• Output code in UTF-8; German umlauts must be encoded properly.
+• Maintain .ebextensions directory for environment vars.
+• Keep secrets out of source code — use GitHub Secrets & AWS Config.
+
+---------------------------------------------------------------------------
+SUCCESS CRITERIA:
+✓ `python app.py` runs locally and generates MP3.  
+✓ `/health` returns JSON status.  
+✓ GitHub Actions deploys automatically to Elastic Beanstalk.  
+✓ App URL reachable publicly and generates speech in German.  
+✓ MP3s appear in S3 bucket and are downloadable.  
+
+---------------------------------------------------------------------------
+END OF CONTEXT

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Plattdeutsch TTS</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; }
+      h1 { font-size: 1.6rem; margin-bottom: .5rem; }
+      form { display: grid; gap: .75rem; max-width: 720px; }
+      textarea { width: 100%; min-height: 10rem; padding: .75rem; font-size: 1rem; }
+      button { width: fit-content; padding: .6rem 1rem; font-size: 1rem; cursor: pointer; }
+      .hint { font-size: .9rem; opacity: .8; }
+      .result { margin-top: 1rem; }
+      .error { color: #c00; }
+      .ok { color: #0a0; }
+      a.button { display: inline-block; padding: .5rem .9rem; border: 1px solid currentColor; border-radius: 6px; text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    <h1>Plattdeutsch Text-zu-Sprache</h1>
+    <p class="hint">Geben Sie Ihren deutschen Text ein und klicken Sie auf „Sprachdatei erzeugen“.</p>
+
+    <form id="ttsForm">
+      <label for="text">Text</label>
+      <textarea id="text" name="text" placeholder="Hier Text eingeben…"></textarea>
+      <button type="submit">Sprachdatei erzeugen</button>
+    </form>
+
+    <div id="status" class="result"></div>
+    <div id="link" class="result"></div>
+
+    <script>
+      const form = document.getElementById('ttsForm');
+      const statusEl = document.getElementById('status');
+      const linkEl = document.getElementById('link');
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        statusEl.textContent = 'Erzeuge Audio… bitte warten';
+        statusEl.className = 'result';
+        linkEl.innerHTML = '';
+
+        const fd = new FormData(form);
+        try {
+          const resp = await fetch('/synthesize', { method: 'POST', body: fd });
+          const ctype = resp.headers.get('content-type') || '';
+
+          if (ctype.includes('application/json')) {
+            const data = await resp.json();
+            if (!resp.ok) {
+              statusEl.textContent = data.error || 'Fehler bei der Synthese.';
+              statusEl.className = 'result error';
+              return;
+            }
+            statusEl.textContent = 'Fertig. Download-Link:';
+            statusEl.className = 'result ok';
+            const a = document.createElement('a');
+            a.href = data.url;
+            a.textContent = 'MP3 herunterladen';
+            a.className = 'button';
+            a.rel = 'noopener noreferrer';
+            linkEl.replaceChildren(a);
+            return;
+          }
+
+          // Otherwise expect audio/mpeg blob
+          const blob = await resp.blob();
+          if (!resp.ok) {
+            statusEl.textContent = 'Fehler bei der Synthese.';
+            statusEl.className = 'result error';
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          statusEl.textContent = 'Fertig. Datei bereit:';
+          statusEl.className = 'result ok';
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'tts.mp3';
+          a.textContent = 'MP3 herunterladen';
+          a.className = 'button';
+          linkEl.replaceChildren(a);
+        } catch (err) {
+          statusEl.textContent = 'Unerwarteter Fehler: ' + (err && err.message ? err.message : err);
+          statusEl.className = 'result error';
+        }
+      });
+    </script>
+  </body>
+</html>
+
