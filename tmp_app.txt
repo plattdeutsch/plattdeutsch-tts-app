@@ -1,0 +1,275 @@
+import os
+import io
+import time
+import re
+from uuid import uuid4
+from typing import Optional, Tuple, List
+import torch
+import numpy as np
+from flask import Flask, jsonify, render_template, request, send_file
+from TTS.utils.radam import RAdam  # 👈 required for newer PyTorch versions
+
+ 
+
+
+# ==== PyTorch safety patch (for 2.6+) ====
+torch.serialization.add_safe_globals([RAdam, dict])
+
+# ==== Flask setup ====
+app = Flask(__name__)
+
+# ==== Environment configuration ====
+AWS_REGION = os.getenv("AWS_REGION", "eu-central-1")
+USE_S3 = os.getenv("USE_S3", "false").lower() in {"1", "true", "yes"}
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "plattdeutsch-tts-audio")
+
+# ==== Globals for lazy initialization ====
+_tts_instance = None
+_tts_samplerate: Optional[int] = None
+_s3_client = None
+
+
+# ==== AWS S3 Helper ====
+def _get_s3_client():
+    global _s3_client
+    if _s3_client is None:
+        import boto3
+        _s3_client = boto3.client("s3", region_name=AWS_REGION)
+    return _s3_client
+
+
+# ==== Load Local Coqui Model (no download needed) ====
+def _load_tts() -> Tuple[object, int]:
+    """Load and cache the TTS model from local paths."""
+    global _tts_instance, _tts_samplerate
+    if _tts_instance is not None:
+        return _tts_instance, _tts_samplerate
+
+    from TTS.api import TTS  # imported here to save load time
+
+    print("🚀 Loading Coqui TTS model from local paths...")
+
+    # Local paths (inside /models)
+    base_dir = os.path.dirname(__file__)
+    model_dir = os.path.join(base_dir, "models", "tts_models--de--thorsten--tacotron2-DDC")
+    vocoder_dir = os.path.join(base_dir, "models", "vocoder_models--de--thorsten--hifigan_v1")
+
+    model_path = os.path.join(model_dir, "model_file.pth")
+    config_path = os.path.join(model_dir, "config.json")
+    vocoder_path = os.path.join(vocoder_dir, "model_file.pth.tar")
+    vocoder_config_path = os.path.join(vocoder_dir, "config.json")
+
+    # Initialize local model
+    tts = TTS(
+        model_path=model_path,
+        config_path=config_path,
+        vocoder_path=vocoder_path,
+        vocoder_config_path=vocoder_config_path
+    )
+
+    # Ensure attribute expected by newer API exists for older single-speaker models
+    try:
+        getattr(tts, "is_multi_lingual")
+    except AttributeError:
+        try:
+            object.__setattr__(tts, "is_multi_lingual", False)
+        except Exception:
+            pass
+
+    # Model initialized
+
+
+    # Determine sample rate
+    sr = 22050
+    try:
+        sr = getattr(tts, "output_sample_rate", 22050)
+    except Exception:
+        pass
+
+    _tts_instance = tts
+    _tts_samplerate = sr
+    print("✅ Model loaded successfully.")
+    return _tts_instance, _tts_samplerate
+
+
+# ==== Convert WAV → MP3 (in-memory) ====
+def _wav_to_mp3_bytes(waveform: np.ndarray, sample_rate: int) -> bytes:
+    import lameenc
+
+    # Ensure mono int16 PCM little-endian
+    if waveform.ndim > 1:
+        waveform = np.mean(waveform, axis=1)
+    waveform = np.clip(waveform, -1.0, 1.0)
+    pcm16 = (waveform * 32767.0).astype(np.int16).tobytes()
+
+    enc = lameenc.Encoder()
+    enc.set_bit_rate(128)
+    enc.set_in_sample_rate(sample_rate)
+    enc.set_channels(1)
+    enc.set_quality(2)
+
+    mp3_data = enc.encode(pcm16) + enc.flush()
+    return mp3_data
+
+
+def _normalize_text(text: str) -> str:
+    # Normalize whitespace
+    text = text.replace("\r", " ").replace("\n", " ")
+    # Replace common typographic punctuation with ASCII equivalents
+    replacements = {
+        "\u2018": "'",  # ‘
+        "\u2019": "'",  # ’
+        "\u201A": ",",  # ‚
+        "\u201C": '"',  # “
+        "\u201D": '"',  # ”
+        "\u00AB": '"',  # «
+        "\u00BB": '"',  # »
+        "\u2013": "-",  # – en dash
+        "\u2014": "-",  # — em dash
+        "\u2026": "...",  # … ellipsis
+        "\u00A0": " ",  # non-breaking space
+    }
+    text = text.translate(str.maketrans(replacements))
+    # Collapse leftover multiple spaces
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _split_text_into_chunks(text: str, max_chars: int = 220, min_chars: int = 20) -> List[str]:
+    if not text:
+        return []
+    sentences = re.split(r"(?<=[\.!?…;:])\s+", text)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    chunks: List[str] = []
+    buf = ""
+    for s in sentences:
+        if not buf:
+            buf = s
+        elif len(buf) + 1 + len(s) <= max_chars:
+            buf = f"{buf} {s}"
+        else:
+            chunks.append(buf)
+            buf = s
+    if buf:
+        chunks.append(buf)
+    merged: List[str] = []
+    for c in chunks:
+        if merged and len(c) < min_chars and len(merged[-1]) + 1 + len(c) <= max_chars:
+            merged[-1] = f"{merged[-1]} {c}"
+        else:
+            merged.append(c)
+    return merged
+
+
+def _tts_chunk(tts, text: str):
+    try:
+        return tts.tts(text)
+    except AttributeError as e:
+        if "is_multi_lingual" in str(e) and hasattr(tts, "synthesizer"):
+            return tts.synthesizer.tts(text)
+        raise
+
+
+# ==== Synthesize text → MP3 ====
+def _synthesize_to_mp3(text: str) -> Tuple[str, bytes]:
+    tts, sr = _load_tts()
+    text = _normalize_text(text)
+    chunks = _split_text_into_chunks(text)
+    if not chunks:
+        raise ValueError("Leerer Text nach Normalisierung.")
+
+    silence = np.zeros(int(sr * 0.15), dtype=np.float32)
+    wavs: List[np.ndarray] = []
+    for c in chunks:
+        if len(c) < 3:
+            continue
+        audio = _tts_chunk(tts, c)
+        if not isinstance(audio, np.ndarray):
+            audio = np.array(audio, dtype=np.float32)
+        wavs.append(audio.astype(np.float32))
+        wavs.append(silence)
+
+    if not wavs:
+        raise ValueError("Kein Audio erzeugt (zu kurze Segmente?).")
+
+    full = np.concatenate(wavs)
+    mp3_bytes = _wav_to_mp3_bytes(full, sr)
+    file_id = uuid4().hex[:8]
+    filename = f"tts_{int(time.time())}_{file_id}.mp3"
+    return filename, mp3_bytes
+
+
+# ==== Routes ====
+@app.get("/")
+def index():
+    return render_template("index.html")
+
+
+@app.post("/synthesize")
+def synthesize():
+    text = (request.form.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "Bitte Text eingeben."}), 400
+    if len(text) > 1000:
+        return jsonify({"error": "Text ist zu lang (max. 1000 Zeichen)."}), 400
+
+    try:
+        filename, mp3_bytes = _synthesize_to_mp3(text)
+    except Exception as e:
+        import traceback
+        print("❌ Exception during TTS synthesis:")
+        traceback.print_exc()  # 👈 This prints full details to PowerShell
+        return jsonify({"error": f"TTS-Fehler: {e}"}), 500
+
+    # === Upload to S3 if enabled ===
+    if USE_S3 and S3_BUCKET_NAME:
+        try:
+            s3 = _get_s3_client()
+            key = f"audio/{filename}"
+            s3.put_object(
+                Bucket=S3_BUCKET_NAME,
+                Key=key,
+                Body=mp3_bytes,
+                ContentType="audio/mpeg",
+            )
+            url = s3.generate_presigned_url(
+                ClientMethod="get_object",
+                Params={"Bucket": S3_BUCKET_NAME, "Key": key},
+                ExpiresIn=3600,
+            )
+            return jsonify({"url": url, "key": key, "filename": filename})
+        except Exception as e:
+            return jsonify({"error": f"S3-Fehler: {e}"}), 500
+
+    # === Fallback: return MP3 directly ===
+    return send_file(
+        io.BytesIO(mp3_bytes),
+        mimetype="audio/mpeg",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+@app.get("/health")
+def health():
+    loaded = _tts_instance is not None
+    return jsonify(
+        {
+            "status": "ok",
+            "model_loaded": loaded,
+            "sample_rate": _tts_samplerate,
+            "use_s3": USE_S3,
+            "bucket": S3_BUCKET_NAME if USE_S3 else None,
+            "region": AWS_REGION,
+        }
+    )
+
+
+# ==== Run locally ====
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=False)
+
+# Optional: avoid favicon 404 noise during local testing
+@app.get("/favicon.ico")
+def favicon():
+    return ("", 204)

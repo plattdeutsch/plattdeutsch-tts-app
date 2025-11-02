@@ -1,0 +1,12 @@
+{
+  "USE_S3": false,
+  "S3_BUCKET_NAME": "plattdeutsch-tts-audio",
+  "FORCE_JSON_RESPONSE": false,
+  "MAX_TEXT_WORDS": 2000,
+  "MAX_TEXT_LEN": 20000,
+  "RATE_LIMIT_MAX": 20,
+  "RATE_LIMIT_WINDOW": 60,
+  "CHUNK_MAX_CHARS": 220,
+  "CHUNK_MIN_CHARS": 20,
+  "SILENCE_SEC": 0.15
+}

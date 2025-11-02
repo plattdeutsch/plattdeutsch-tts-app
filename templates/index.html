@@ -1,92 +1,172 @@
-<!doctype html>
-<html lang="de">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Plattdeutsch TTS</title>
-    <style>
-      :root { color-scheme: light dark; }
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; }
-      h1 { font-size: 1.6rem; margin-bottom: .5rem; }
-      form { display: grid; gap: .75rem; max-width: 720px; }
-      textarea { width: 100%; min-height: 10rem; padding: .75rem; font-size: 1rem; }
-      button { width: fit-content; padding: .6rem 1rem; font-size: 1rem; cursor: pointer; }
-      .hint { font-size: .9rem; opacity: .8; }
-      .result { margin-top: 1rem; }
-      .error { color: #c00; }
-      .ok { color: #0a0; }
-      a.button { display: inline-block; padding: .5rem .9rem; border: 1px solid currentColor; border-radius: 6px; text-decoration: none; }
-    </style>
-  </head>
-  <body>
-    <h1>Plattdeutsch Text-zu-Sprache</h1>
-    <p class="hint">Geben Sie Ihren deutschen Text ein und klicken Sie auf „Sprachdatei erzeugen“.</p>
+{% extends "base.html" %}
+{% block content %}
+<section class="bg-white dark:bg-gray-800 shadow-md rounded-xl p-8 transition hover:shadow-lg max-w-4xl mx-auto w-full">
+  <img src="/logo.png" alt="Logo" class="mx-auto w-20 h-20 object-contain mb-4"/>
+  <h2 class="text-2xl font-semibold mb-3 text-center">👋 Willkommen beim Plattdeutsch TTS</h2>
+  <p class="text-gray-500 dark:text-gray-400 mb-6 max-w-2xl mx-auto text-center">
+    Geben Sie einen Text ein, um eine Sprachausgabe im Plattdeutschen zu erzeugen.
+  </p>
+  <form id="ttsForm" action="/synthesize" method="post" class="space-y-4">
+    <div class="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
+      <div>
+        Wörter: <span id="wc">0</span>/<span>{{ limits.words }}</span>
+        · Zeichen: <span id="cc">0</span>/<span>{{ limits.chars }}</span>
+      </div>
+      <div id="notice" class="text-amber-600"></div>
+    </div>
+    <textarea id="text" name="text" rows="5" class="w-full bg-gray-100 dark:bg-gray-700 rounded-md px-3 py-2" placeholder="Schreiben Sie hier..."></textarea>
+    <div class="flex items-center gap-3">
+      <button id="submitBtn" type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-md">▶ Sprechen</button>
+      <button id="clearBtn" type="button" class="bg-gray-200 dark:bg-gray-700 hover:bg-gray-600 hover:text-white px-4 py-2 rounded-md">🧹 Löschen</button>
+    </div>
+  </form>
+  <div id="status" class="mt-4 text-sm"></div>
+  <div id="link" class="mt-2"></div>
+  <audio id="player" controls class="mt-4 w-full" hidden></audio>
+</section>
+<section class="bg-white dark:bg-gray-800 shadow-md rounded-xl p-6 mt-6 max-w-4xl mx-auto">
+  <h3 class="text-lg font-semibold mb-2">🔗 Projekt‑Links</h3>
+  <ul class="list-disc pl-5 text-sm text-gray-600 dark:text-gray-400 space-y-1">
+    <li><a class="text-emerald-600 hover:underline" href="https://github.com/plattdeutsch/plattdeutsch-tts-app" target="_blank" rel="noopener">GitHub Repository</a></li>
+    <li><a class="text-emerald-600 hover:underline" href="/health" target="_blank" rel="noopener">/health</a></li>
+    <li><a class="text-emerald-600 hover:underline" href="/admin">Admin Dashboard</a> (Token erforderlich)</li>
+    <li><a class="text-emerald-600 hover:underline" href="/impressum">Impressum</a></li>
+  </ul>
+</section>
+<script>
+  const form = document.getElementById('ttsForm');
+  const statusEl = document.getElementById('status');
+  const linkEl = document.getElementById('link');
+  const player = document.getElementById('player');
+  const notice = document.getElementById('notice');
+  const wcEl = document.getElementById('wc');
+  const ccEl = document.getElementById('cc');
+  const clearBtn = document.getElementById('clearBtn');
+  const submitBtn = document.getElementById('submitBtn');
 
-    <form id="ttsForm">
-      <label for="text">Text</label>
-      <textarea id="text" name="text" placeholder="Hier Text eingeben…"></textarea>
-      <button type="submit">Sprachdatei erzeugen</button>
-    </form>
+  const LIMIT_WORDS = {{ limits.words }};
+  const LIMIT_CHARS = {{ limits.chars }};
 
-    <div id="status" class="result"></div>
-    <div id="link" class="result"></div>
+  function normalizeText(s){
+    return (s || '').replace(/\r|\n/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function countWC(s){
+    const norm = normalizeText(s);
+    return { words: norm ? norm.split(/\s+/).length : 0, chars: norm.length, norm };
+  }
+  function updateCounters(){
+    const v = document.getElementById('text').value;
+    const {words, chars} = countWC(v);
+    wcEl.textContent = words;
+    ccEl.textContent = chars;
+    if (words > LIMIT_WORDS || chars > LIMIT_CHARS){
+      notice.textContent = 'Text überschreitet das Limit und wird automatisch gekürzt.';
+    } else {
+      notice.textContent = '';
+    }
+  }
+  document.getElementById('text').addEventListener('input', updateCounters);
+  clearBtn.addEventListener('click', ()=>{
+    document.getElementById('text').value = '';
+    statusEl.textContent = '';
+    linkEl.innerHTML = '';
+    player.hidden = true;
+    updateCounters();
+  });
+  updateCounters();
 
-    <script>
-      const form = document.getElementById('ttsForm');
-      const statusEl = document.getElementById('status');
-      const linkEl = document.getElementById('link');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    let txt = document.getElementById('text').value;
+    let {words, chars, norm} = countWC(txt);
+    let trimmed = false;
+    if (words > LIMIT_WORDS){
+      norm = norm.split(/\s+/).slice(0, LIMIT_WORDS).join(' ');
+      trimmed = true;
+    }
+    if (norm.length > LIMIT_CHARS){
+      norm = norm.slice(0, LIMIT_CHARS);
+      trimmed = true;
+    }
+    if (trimmed){
+      notice.textContent = 'Ihr Text wurde auf das erlaubte Maximum gekürzt.';
+      document.getElementById('text').value = norm;
+      updateCounters();
+    }
 
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        statusEl.textContent = 'Erzeuge Audio… bitte warten';
-        statusEl.className = 'result';
-        linkEl.innerHTML = '';
-
-        const fd = new FormData(form);
-        try {
-          const resp = await fetch('/synthesize', { method: 'POST', body: fd });
-          const ctype = resp.headers.get('content-type') || '';
-
-          if (ctype.includes('application/json')) {
-            const data = await resp.json();
-            if (!resp.ok) {
-              statusEl.textContent = data.error || 'Fehler bei der Synthese.';
-              statusEl.className = 'result error';
-              return;
-            }
-            statusEl.textContent = 'Fertig. Download-Link:';
-            statusEl.className = 'result ok';
-            const a = document.createElement('a');
-            a.href = data.url;
-            a.textContent = 'MP3 herunterladen';
-            a.className = 'button';
-            a.rel = 'noopener noreferrer';
-            linkEl.replaceChildren(a);
-            return;
-          }
-
-          // Otherwise expect audio/mpeg blob
-          const blob = await resp.blob();
-          if (!resp.ok) {
-            statusEl.textContent = 'Fehler bei der Synthese.';
-            statusEl.className = 'result error';
-            return;
-          }
-          const url = URL.createObjectURL(blob);
-          statusEl.textContent = 'Fertig. Datei bereit:';
-          statusEl.className = 'result ok';
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'tts.mp3';
-          a.textContent = 'MP3 herunterladen';
-          a.className = 'button';
-          linkEl.replaceChildren(a);
-        } catch (err) {
-          statusEl.textContent = 'Unerwarteter Fehler: ' + (err && err.message ? err.message : err);
-          statusEl.className = 'result error';
+    statusEl.textContent = '🎙️ Erzeuge Audio … bitte warten';
+    linkEl.innerHTML = '';
+    player.hidden = true;
+    submitBtn.disabled = true;
+    const fd = new FormData();
+    fd.append('text', norm);
+    try {
+      const resp = await fetch('/synthesize', { method: 'POST', body: fd });
+      const ctype = resp.headers.get('content-type') || '';
+      if (ctype.includes('application/json')) {
+        const data = await resp.json();
+        if (!resp.ok) {
+          statusEl.textContent = data.error || 'Fehler bei der Synthese.';
+          statusEl.className = 'text-red-600';
+          return;
         }
-      });
-    </script>
-  </body>
-</html>
-
+        // If presigned URL, play from URL
+        if (data.url){
+          statusEl.textContent = '✅ Fertig – Audio bereit:';
+          statusEl.className = 'text-emerald-600';
+          const a = document.createElement('a');
+          a.href = data.url;
+          a.textContent = 'MP3 herunterladen';
+          a.className = 'inline-block bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-md';
+          a.rel = 'noopener noreferrer';
+          linkEl.replaceChildren(a);
+          player.src = data.url;
+          player.hidden = false;
+          try { await player.play(); } catch {}
+          return;
+        }
+        // Or base64 in JSON
+        if (data.data_b64){
+          const dataUrl = `data:${data.mime || 'audio/mpeg'};base64,${data.data_b64}`;
+          statusEl.textContent = '✅ Fertig – Audio bereit:';
+          statusEl.className = 'text-emerald-600';
+          const a = document.createElement('a');
+          a.href = dataUrl;
+          a.download = data.filename || 'tts.mp3';
+          a.textContent = 'MP3 herunterladen';
+          a.className = 'inline-block bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-md';
+          linkEl.replaceChildren(a);
+          player.src = dataUrl;
+          player.hidden = false;
+          try { await player.play(); } catch {}
+          return;
+        }
+        return;
+      }
+      const blob = await resp.blob();
+      if (!resp.ok) {
+        statusEl.textContent = 'Fehler bei der Synthese.';
+        statusEl.className = 'text-red-600';
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      statusEl.textContent = '✅ Fertig – Audio bereit:';
+      statusEl.className = 'text-emerald-600';
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'tts.mp3';
+      a.textContent = 'MP3 herunterladen';
+      a.className = 'inline-block bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-md';
+      linkEl.replaceChildren(a);
+      player.src = url;
+      player.hidden = false;
+      try { await player.play(); } catch {}
+    } catch (err) {
+      statusEl.textContent = 'Unerwarteter Fehler: ' + (err && err.message ? err.message : err);
+      statusEl.className = 'text-red-600';
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+</script>
+{% endblock %}

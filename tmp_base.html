@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="de" x-data="{dark: localStorage.getItem('dark') === 'true'}"
+  :class="dark ? 'dark' : ''"
+  x-init="$watch('dark', val => localStorage.setItem('dark', val))">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title or 'Plattdeutsch TTS Admin' }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body class="flex bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen">
+    <aside class="w-64 bg-white dark:bg-gray-800 h-screen shadow-md p-5 flex flex-col justify-between fixed inset-y-0 left-0">
+      <div>
+        <h1 class="text-xl font-bold mb-6 flex items-center gap-2"><img src="/static/favicon.svg" class="w-6 h-6" alt=""/>🗣️ Plattdeutsch TTS</h1>
+        <nav class="space-y-2">
+          <a href="/" class="block px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700">🏠 Startseite</a>
+          <a href="/admin" class="block px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700">🧠 Dashboard</a>
+          <a href="/admin#models" class="block px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700">📦 Modelle</a>
+          <a href="/admin#settings" class="block px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700">⚙️ Einstellungen</a>
+          <a href="/admin#preview" class="block px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700">🔊 Vorschau</a>
+        </nav>
+      </div>
+      <div>
+        <button @click="dark=!dark" class="w-full bg-gray-200 dark:bg-gray-700 text-center py-2 rounded-md font-medium text-sm">
+          <span x-show="!dark">🌙 Dunkelmodus</span>
+          <span x-show="dark">☀️ Hellmodus</span>
+        </button>
+      </div>
+    </aside>
+    <main class="flex-1 ml-64 p-8 space-y-8 overflow-y-auto">
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>
+

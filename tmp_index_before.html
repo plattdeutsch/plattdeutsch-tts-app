@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plattdeutsch TTS – Web UI</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+
+  <body>
+    <header class="app-header">
+      <div class="container">
+        <div class="brand">
+          <img src="/static/favicon.svg" alt="Logo" class="logo" />
+          <div class="title">
+            <h1>Plattdeutsch Text‑zu‑Sprache</h1>
+          </div>
+        </div>
+        
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="card">
+        <div class="card-body">
+          <div class="row muted" id="meta">
+            <span id="counter">0 Wörter · 0 Zeichen</span>
+            <span class="sep"></span>
+            <span class="muted">Max wird automatisch erkannt</span>
+          </div>
+
+          <form id="ttsForm">
+            <label for="text" class="label">Text</label>
+            <textarea id="text" name="text" placeholder="Hier Text eingeben…"></textarea>
+            <div class="row">
+              <div class="buttons">
+                <button type="submit" id="submitBtn">🎧 Sprachdatei erzeugen</button>
+                <button type="button" id="clearBtn" class="secondary">🧹 Text löschen</button>
+              </div>
+              <span class="sep"></span>
+              <label class="muted"><input type="checkbox" id="jsonMode" /> JSON‑Modus</label>
+            </div>
+          </form>
+
+          <div id="status" class="result"></div>
+          <div id="link" class="result"></div>
+          <audio id="player" controls hidden></audio>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-body">
+          <h2 class="label" style="margin-top:0">Systemstatus</h2>
+          <div id="statusDetails" class="muted" style="margin-top:.5rem"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <div class="container muted">
+        <span>© Plattdeutsch TTS</span>
+        <span class="sep"></span>
+        <a href="/health" target="_blank" rel="noopener">/health</a>
+      </div>
+    </footer>
+
+    <script>
+      const form = document.getElementById("ttsForm");
+      const statusEl = document.getElementById("status");
+      const linkEl = document.getElementById("link");
+      const player = document.getElementById("player");
+      const clearBtn = document.getElementById("clearBtn");
+      const submitBtn = document.getElementById("submitBtn");
+
+      clearBtn.addEventListener("click", () => {
+        document.getElementById("text").value = "";
+        statusEl.textContent = "";
+        linkEl.innerHTML = "";
+        player.hidden = true;
+        updateCounter();
+      });
+
+      const updateCounter = () => {
+        const t = document.getElementById("text").value;
+        const norm = t.replace(/\r|\n/g, " ").replace(/\s+/g, " ").trim();
+        const words = norm ? norm.split(/\s+/).length : 0;
+        document.getElementById("counter").textContent = `${words} Wörter · ${norm.length} Zeichen`;
+      };
+
+      document.getElementById("text").addEventListener("input", updateCounter);
+      updateCounter();
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const text = document.getElementById("text").value.trim();
+        if (!text) {
+          statusEl.textContent = "Bitte geben Sie einen Text ein.";
+          statusEl.className = "result error";
+          return;
+        }
+
+        statusEl.textContent = "🎙️ Erzeuge Audio … bitte warten.";
+        statusEl.className = "result";
+        linkEl.innerHTML = "";
+        player.hidden = true;
+        submitBtn.disabled = true;
+        submitBtn.classList.add('loading');
+
+        const fd = new FormData(form);
+        try {
+          const asJson = document.getElementById("jsonMode").checked;
+          const urlPath = asJson ? "/synthesize?json=1" : "/synthesize";
+          const resp = await fetch(urlPath, { method: "POST", body: fd, headers: asJson ? { Accept: "application/json" } : {} });
+          const ctype = resp.headers.get("content-type") || "";
+
+          if (ctype.includes("application/json")) {
+            const data = await resp.json();
+            if (!resp.ok) {
+              statusEl.textContent = data.error || "Fehler bei der Synthese.";
+              statusEl.className = "result error";
+              return;
+            }
+            // Either presigned url or base64 data
+            if (data.url) {
+              statusEl.textContent = "✅ Fertig – Datei auf Server gespeichert:";
+              statusEl.className = "result ok";
+              const a = document.createElement("a");
+              a.href = data.url;
+              a.textContent = "MP3 herunterladen";
+              a.className = "button";
+              a.rel = "noopener noreferrer";
+              linkEl.replaceChildren(a);
+              player.hidden = true;
+              return;
+            } else if (data.data_b64) {
+              const dataUrl = `data:${data.mime || "audio/mpeg"};base64,${data.data_b64}`;
+              statusEl.textContent = "✅ Fertig – Audio bereit:";
+              statusEl.className = "result ok";
+              const a = document.createElement("a");
+              a.href = dataUrl;
+              a.download = data.filename || "tts.mp3";
+              a.textContent = "MP3 herunterladen";
+              a.className = "button";
+              linkEl.replaceChildren(a);
+              player.src = dataUrl;
+              player.hidden = false;
+              player.play().catch(() => {});
+              return;
+            }
+          }
+
+          // Local audio blob
+          const blob = await resp.blob();
+          if (!resp.ok) {
+            statusEl.textContent = "Fehler bei der Synthese.";
+            statusEl.className = "result error";
+            return;
+          }
+
+          const url = URL.createObjectURL(blob);
+          statusEl.textContent = "✅ Fertig – Audio bereit:";
+          statusEl.className = "result ok";
+
+          // Download link
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "tts.mp3";
+          a.textContent = "MP3 herunterladen";
+          a.className = "button";
+          linkEl.replaceChildren(a);
+
+          // Inline player
+          player.src = url;
+          player.hidden = false;
+          player.onloadedmetadata = () => {
+            const dur = player.duration.toFixed(1);
+            if (dur && dur !== "NaN")
+              statusEl.textContent += ` (Dauer: ${dur}s)`;
+          };
+          player.play().catch(() => {}); // auto-start if browser allows
+        } catch (err) {
+          statusEl.textContent =
+            "Unerwarteter Fehler: " +
+            (err && err.message ? err.message : String(err));
+          statusEl.className = "result error";
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.classList.remove('loading');
+        }
+      });
+
+      // Fetch health to show basic status
+      (async () => {
+        try {
+          const r = await fetch('/health');
+          const h = await r.json();
+
+          const details = [];
+          details.push(`<b>Uptime</b>: ${h.uptime_seconds ?? 0}s`);
+          details.push(`<b>Sample-Rate</b>: ${h.sample_rate ?? '-'} Hz`);
+          details.push(`<b>Auto-Download</b>: ${h.auto_downloaded ? 'ja' : 'nein'}`);
+          if (h.chunking) {
+            details.push(`<b>Chunking</b>: max ${h.chunking.max_chars} Zeichen, min ${h.chunking.min_chars}, Pause ${h.chunking.silence_sec}s`);
+          }
+          if (h.cors) {
+            details.push(`<b>CORS</b>: ${h.cors.origins}`);
+          }
+          if (h.versions) {
+            details.push(`<b>Versionen</b>: Python ${h.versions.python}, Flask ${h.versions.Flask || '-'}, TTS ${h.versions.TTS || '-'}, torch ${h.versions.torch || '-'}, numpy ${h.versions.numpy || '-'}`);
+          }
+          details.push(`<b>AWS</b>: Region ${h.region}, S3 ${h.use_s3 ? ('an (' + (h.bucket || '-') + ')') : 'aus'}`);
+          if (h.limits) {
+            details.push(`<b>Rate-Limit</b>: ${h.limits.rate_limit_max} / ${h.limits.rate_limit_window}s`);
+          }
+          document.getElementById('statusDetails').innerHTML = details.map(d => `<div>${d}</div>`).join('');
+        } catch {}
+      })();
+    </script>
+  </body>
+</html>

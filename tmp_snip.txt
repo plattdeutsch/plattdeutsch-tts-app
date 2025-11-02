@@ -1,0 +1,6 @@
+CORS_ORIGINS,
+            "force_json": FORCE_JSON_RESPONSE,
+        },
+        "download_status": _download_status,\r\n        "system": _system_info(),
+    }
+    resp = make_response(render_template

@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# App artifacts
+models/
+*.mp3
+.active_model.json
+config.local.json
+
+# Node (if any future UI bits)
+node_modules/
+
+# Packaging
+deploy.zip
+

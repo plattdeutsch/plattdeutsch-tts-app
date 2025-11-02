@@ -1,0 +1,84 @@
+/* Minimal, production-ready CSS for Plattdeutsch TTS */
+:root {
+  color-scheme: light dark;
+  --bg: #0b0b0c;
+  --fg: #e9e9eb;
+  --muted: #a8a8b3;
+  --card: #151518;
+  --border: #26262b;
+  --accent: #4c8bf5;
+  --accent-2: #2a6be9;
+  --ok: #2bb673;
+  --err: #e45454;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f7f7f9;
+    --fg: #1b1b1d;
+    --muted: #5d5d66;
+    --card: #ffffff;
+    --border: #e8e8ef;
+    --accent: #2a6be9;
+    --accent-2: #1f56bf;
+    --ok: #178f59;
+    --err: #b43a3a;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  line-height: 1.6;
+}
+
+.container { width: min(100%, 980px); margin: 0 auto; padding: 1.25rem; }
+
+.app-header {
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(0,0,0,0));
+}
+.brand { display: flex; align-items: center; gap: .9rem; }
+.brand .logo { width: 36px; height: 36px; }
+.brand .title h1 { margin: 0; font-size: 1.4rem; }
+.brand .sub { margin: 0; color: var(--muted); font-size: .9rem; }
+.app-header .status { color: var(--muted); }
+.app-header .container { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; margin: 1.25rem auto; }
+.card-body { padding: 1.25rem; }
+
+.row { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+.muted { color: #888; font-size: 0.85em; }
+
+/* Legacy card spacing helper for non-Tailwind views */
+section.card { margin-top: 1.5rem; }
+.sep { flex: 1 1 auto; }
+
+.label { font-weight: 600; }
+textarea {
+  width: 100%; min-height: 12rem; padding: .9rem; font-size: 1rem; border-radius: 8px;
+  border: 1px solid var(--border); background: transparent; color: inherit; outline: none;
+}
+textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
+
+button, .button { transition: all .2s ease-in-out; cursor: pointer; }
+button:hover, .button:hover { transform: translateY(-1px); }
+button.danger { background: transparent; color: var(--err); border-color: var(--err); }
+button.danger:hover { background: color-mix(in srgb, var(--err) 15%, transparent); }
+button.loading { position: relative; pointer-events: none; opacity: .7; }
+button.loading::after { content: ""; width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; border-top-color: transparent; display: inline-block; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.result { margin-top: 1rem; }
+.result.ok { color: var(--ok); }
+.result.error { color: var(--err); }
+
+audio { display: block; margin-top: 1rem; width: 100%; }
+
+.app-footer { border-top: 1px solid var(--border); padding: .75rem 0; margin-top: 2rem; }
+.app-footer .container { display: flex; align-items: center; gap: .75rem; }
+.app-footer a { color: var(--accent); text-decoration: none; }
+.app-footer a:hover { text-decoration: underline; }

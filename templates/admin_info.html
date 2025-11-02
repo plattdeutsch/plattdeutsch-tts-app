@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-8 max-w-3xl mx-auto">
+  <h2 class="text-2xl font-semibold mb-4">🛠️ Anleitung: Administration</h2>
+  <ol class="list-decimal pl-6 space-y-3 text-gray-700 dark:text-gray-300">
+    <li><strong>Login:</strong> Setzen Sie <code>ADMIN_TOKEN</code> in der Umgebung. Öffnen Sie <code>/admin?token=IHR_TOKEN</code>, um die Admin‑Sitzung zu starten.</li>
+    <li><strong>Systemstatus:</strong> Prüfen Sie CPU/RAM/Disk, Laufzeit, geladenes Modell und aktive Modelle.</li>
+    <li><strong>Modelle verwalten:</strong>
+      <ul class="list-disc pl-6 mt-2 space-y-1">
+        <li><em>Herunterladen</em> der Standardmodelle (Thorsten/HifiGAN).</li>
+        <li><em>Hochladen</em> eigener Modelle (.zip/.tar/.pth).</li>
+        <li><em>Import</em> per Coqui‑Kennung (z. B. <code>tts_models/de/thorsten/tacotron2-DDC</code>) oder per URL.</li>
+        <li><em>Aktivieren</em> einzelner Modelle oder <em>Paar</em> (TTS/Vocoder) festlegen.</li>
+        <li><em>Löschen</em> veralteter Modellordner.</li>
+      </ul>
+    </li>
+    <li><strong>Einstellungen:</strong> S3, JSON‑Antwort, Textlimits (Wörter/Zeichen), Rate‑Limit und Chunking (max/min Zeichen, Pausen) konfigurieren. Mit <em>Speichern</em> wird <code>config.json</code> persistiert.</li>
+    <li><strong>Rate‑Limiter</strong> leeren oder <strong>Modell neu laden</strong> (wird beim nächsten Synthese‑Aufruf geladen).</li>
+    <li><strong>Sprach‑Vorschau:</strong> Kurzen Testtext eingeben und direkt Audio abspielen.</li>
+  </ol>
+  <div class="mt-6 text-sm text-gray-500 dark:text-gray-400">
+    <p>Hinweis: In Multi‑Instance‑Umgebungen (z. B. Elastic Beanstalk) gelten Rate‑Limits pro Instanz. Stellen Sie ausreichende Ressourcen für Modell‑Downloads bereit.</p>
+  </div>
+</section>
+{% endblock %}
+

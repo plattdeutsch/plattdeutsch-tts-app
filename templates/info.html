@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-8 max-w-3xl mx-auto">
+  <h2 class="text-2xl font-semibold mb-4">ℹ️ Anleitung: Nutzung des TTS‑Tools</h2>
+  <ol class="list-decimal pl-6 space-y-3 text-gray-700 dark:text-gray-300">
+    <li>Öffnen Sie die <strong>Startseite</strong> (Link in der Seitenleiste).</li>
+    <li>Geben Sie Ihren deutschen Text in das Textfeld ein. Oben sehen Sie <strong>Wort‑</strong> und <strong>Zeichen‑Zähler</strong> inklusive der <strong>Maximalwerte</strong>.</li>
+    <li>Bei Überschreitung der Limits wird Ihr Text <strong>automatisch gekürzt</strong> – Sie werden darüber informiert.</li>
+    <li>Klicken Sie auf <strong>„Sprechen“</strong>. Die Audiodatei wird erzeugt und <strong>automatisch abgespielt</strong>. Außerdem erscheint ein Download‑Link.</li>
+    <li>Optional: Aktivieren Sie im Admin‑Bereich S3‑Upload, um eine <strong>Download‑URL</strong> zu erhalten.</li>
+  </ol>
+  <div class="mt-6 text-sm text-gray-500 dark:text-gray-400">
+    <p>Tipp: Sehr lange Texte werden automatisch in sinnvolle Abschnitte zerlegt und hintereinander verbunden.</p>
+  </div>
+</section>
+{% endblock %}
+

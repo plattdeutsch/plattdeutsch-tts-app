@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin · Plattdeutsch TTS</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="container">
+        <div class="brand">
+          <img src="/static/favicon.svg" alt="Logo" class="logo" />
+          <div class="title">
+            <h1>Admin</h1>
+            <p class="sub">Laufende Konfiguration</p>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="card">
+        <div class="card-body">
+          <h2 class="label" style="margin-top:0">Systemstatus</h2>
+          <div class="row">
+            <div>CPU: {{ system.cpu if system.cpu is not none else '-' }}%</div>
+            <div class="sep"></div>
+            <div>RAM: {{ system.ram if system.ram is not none else '-' }}%</div>
+            <div class="sep"></div>
+            <div>Disk frei: {{ system.disk_free if system.disk_free is not none else '-' }}%</div>
+            <div class="sep"></div>
+            <div>Uptime: {{ system.uptime }}s</div>
+          </div>
+          <div class="row" style="margin-top:.5rem">
+            <div>Model geladen: {% if model_loaded %}✅{% else %}❌{% endif %}</div>
+            <div class="sep"></div>
+            <div>Aktiv: {{ models.active.tts or '-' }} / {{ models.active.vocoder or '-' }}</div>
+          </div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-body">
+          <h2 class="label" style="margin-top:0">Allgemein</h2>
+          {% if message %}
+          <div class="result" style="margin:.5rem 0;">{{ message }}</div>
+          {% endif %}
+          <form method="post" action="/admin/save">
+            <div class="row" style="margin-top:.75rem">
+              <label class="label" style="min-width:200px">S3 verwenden</label>
+              <input type="checkbox" name="use_s3" value="1" {{ 'checked' if use_s3 else '' }} />
+              <span class="sep"></span>
+              <label class="label">Bucket</label>
+              <input name="bucket" value="{{ bucket }}" style="flex:1 1 240px;padding:.5rem;border:1px solid var(--border);background:transparent;color:inherit;border-radius:6px" />
+            </div>
+
+            <div class="row" style="margin-top:.75rem">
+              <label class="label" style="min-width:200px">JSON-Antwort erzwingen</label>
+              <input type="checkbox" name="force_json" value="1" {{ 'checked' if force_json else '' }} />
+            </div>
+
+            <h2 class="label" style="margin-top:1.25rem">Limits</h2>
+            <div class="row" style="margin-top:.5rem">
+              <label class="label" style="min-width:200px">Max. Wörter</label>
+              <input name="max_words" type="number" value="{{ limits.words }}" style="width:140px;padding:.5rem;border:1px solid var(--border);background:transparent;color:inherit;border-radius:6px" />
+              <label class="label" style="margin-left:1rem">Max. Zeichen</label>
+              <input name="max_chars" type="number" value="{{ limits.chars }}" style="width:140px;padding:.5rem;border:1px solid var(--border);background:transparent;color:inherit;border-radius:6px" />
+            </div>
+
+            <div class="row" style="margin-top:.5rem">
+              <label class="label" style="min-width:200px">Rate-Limit max</label>
+              <input name="rate_max" type="number" value="{{ limits.rate_max }}" style="width:140px;padding:.5rem;border:1px solid var(--border);background:transparent;color:inherit;border-radius:6px" />
+              <label class="label" style="margin-left:1rem">Fenster (s)</label>
+              <input name="rate_window" type="number" value="{{ limits.rate_window }}" style="width:140px;padding:.5rem;border:1px solid var(--border);background:transparent;color:inherit;border-radius:6px" />
+            </div>
+
+            <h2 class="label" style="margin-top:1.25rem">Chunking</h2>
+            <div class="row" style="margin-top:.5rem">
+              <label class="label" style="min-width:200px">Max. Zeichen pro Chunk</label>
+              <input name="chunk_max" type="number" value="{{ chunking.max_chars }}" style="width:140px;padding:.5rem;border:1px solid var(--border);background:transparent;color:inherit;border-radius:6px" />
+              <label class="label" style="margin-left:1rem">Min. Zeichen pro Chunk</label>
+              <input name="chunk_min" type="number" value="{{ chunking.min_chars }}" style="width:140px;padding:.5rem;border:1px solid var(--border);background:transparent;color:inherit;border-radius:6px" />
+              <label class="label" style="margin-left:1rem">Pause (Sek.)</label>
+              <input name="silence" type="number" step="0.01" value="{{ chunking.silence_sec }}" style="width:140px;padding:.5rem;border:1px solid var(--border);background:transparent;color:inherit;border-radius:6px" />
+            </div>
+
+            <div class="row" style="margin-top:1.25rem">
+              <button type="submit">💾 Speichern</button>
+              <form method="post" action="/admin/flush-limiter" style="margin:0">
+                <button type="submit" class="secondary">🧹 Rate-Limiter leeren</button>
+              </form>
+              <form method="post" action="/admin/reload-model" style="margin:0">
+                <button type="submit" class="secondary">🔁 Modell neu laden ({{ 'geladen' if model_loaded else 'nicht geladen' }})</button>
+              </form>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-body">
+          <h2 class="label" style="margin-top:0">Modelle verwalten</h2>
+          <div class="row" style="margin:.5rem 0">
+            <div>
+              <div class="muted">TTS‑Ordner</div>
+              <div style="word-break:break-all">{{ models.tts_dir }}</div>
+              <div class="muted">Status: {{ 'vorhanden' if models.tts_exists else 'fehlt' }}</div>
+            </div>
+            <span class="sep"></span>
+            <div>
+              <div class="muted">Vocoder‑Ordner</div>
+              <div style="word-break:break-all">{{ models.vocoder_dir }}</div>
+              <div class="muted">Status: {{ 'vorhanden' if models.vocoder_exists else 'fehlt' }}</div>
+            </div>
+          </div>
+          <div class="row" style="margin-top:.75rem">
+            <form method="post" action="/admin/download-models" style="margin:0">
+              <button type="submit">⬇️ Modelle herunterladen</button>
+            </form>
+            <form method="post" action="/admin/clean-models" style="margin:0">
+              <button type="submit" class="secondary">🗑️ Modelle löschen</button>
+            </form>
+          </div>
+          <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0" />
+          <div class="row" style="gap:1.25rem;align-items:flex-start">
+            <form method="post" action="/admin/upload-model" enctype="multipart/form-data" style="margin:0;display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
+              <input type="file" name="model_file" accept=".zip,.tar,.tar.gz,.tgz,.pth,.pth.tar" required />
+              <button type="submit">📤 Lokales Modell hochladen</button>
+            </form>
+            <form method="post" action="/admin/import-model" style="margin:0;display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;flex:1 1 auto">
+              <input type="text" name="repo_url" placeholder="z. B. tts_models/de/thorsten/tacotron2-DDC oder URL" style="flex:1 1 380px;padding:.5rem;border:1px solid var(--border);background:transparent;color:inherit;border-radius:6px" required />
+              <label class="muted"><input type="checkbox" name="force" value="1" /> Force Download</label>
+              <button type="submit">🌐 Modell aus Repository laden</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-body">
+          <h2 class="label" style="margin-top:0">Verfügbare Modelle</h2>
+          {% if models.available and models.available|length > 0 %}
+            <div style="overflow:auto">
+              <table style="width:100%; border-collapse: collapse;">
+                <thead>
+                  <tr>
+                    <th style="text-align:left; border-bottom:1px solid var(--border); padding:.4rem .25rem">Name</th>
+                    <th style="text-align:left; border-bottom:1px solid var(--border); padding:.4rem .25rem">Typ</th>
+                    <th style="text-align:left; border-bottom:1px solid var(--border); padding:.4rem .25rem">Status</th>
+                    <th style="text-align:left; border-bottom:1px solid var(--border); padding:.4rem .25rem">Aktion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                {% for m in models.available %}
+                  <tr>
+                    <td style="padding:.4rem .25rem; word-break:break-all">
+                      {{ m.name }}
+                      <div class="muted">{{ m.meta.language }} · {{ m.meta.type }} · {{ m.meta.sample_rate }} Hz</div>
+                    </td>
+                    <td style="padding:.4rem .25rem" class="muted">{{ m.type }}</td>
+                    <td style="padding:.4rem .25rem">{% if m.active %}✅ aktiv{% else %}-{% endif %}</td>
+                    <td style="padding:.4rem .25rem">
+                      <form method="post" action="/admin/activate-model" style="display:inline">
+                        <input type="hidden" name="model_name" value="{{ m.name }}" />
+                        <button type="submit" class="secondary">Aktivieren</button>
+                      </form>
+                      <form method="post" action="/admin/delete-model" style="display:inline" onsubmit="return confirm('Modell wirklich löschen?')">
+                        <input type="hidden" name="model_name" value="{{ m.name }}" />
+                        <button type="submit" class="danger">🗑️</button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <div class="muted">Keine Modelle gefunden. Laden oder importieren Sie Modelle oben.</div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-body">
+          <h2 class="label" style="margin-top:0">Aktive Modelle festlegen</h2>
+          <form method="post" action="/admin/set-active-pair" class="row" style="gap:.75rem;align-items:flex-end;flex-wrap:wrap">
+            <div>
+              <label class="label">TTS‑Modell</label><br />
+              <select name="tts_model" style="min-width:320px;padding:.5rem;border:1px solid var(--border);background:transparent;color:inherit;border-radius:6px">
+                {% for m in models.available if m.type=='TTS' %}
+                  <option value="{{ m.name }}" {% if m.name==models.active.tts %}selected{% endif %}>{{ m.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="label">Vocoder‑Modell</label><br />
+              <select name="vocoder_model" style="min-width:320px;padding:.5rem;border:1px solid var(--border);background:transparent;color:inherit;border-radius:6px">
+                {% for m in models.available if m.type=='Vocoder' %}
+                  <option value="{{ m.name }}" {% if m.name==models.active.vocoder %}selected{% endif %}>{{ m.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <button type="submit" class="secondary">Übernehmen</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-body">
+          <h2 class="label" style="margin-top:0">Sprach‑Vorschau</h2>
+          <form id="previewForm" method="post" action="/admin/preview" class="row" style="gap:.75rem;align-items:flex-end;flex-wrap:wrap">
+            <textarea name="preview_text" rows="2" placeholder="Testtext…" style="flex:1 1 480px;padding:.5rem;border:1px solid var(--border);background:transparent;color:inherit;border-radius:6px"></textarea>
+            <button type="submit">▶ Vorschau abspielen</button>
+          </form>
+          <audio id="previewAudio" controls style="margin-top:1em;width:100%"></audio>
+        </div>
+      </section>
+
+      <script>
+        const pf = document.getElementById('previewForm');
+        if (pf) {
+          pf.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fd = new FormData(pf);
+            const res = await fetch('/admin/preview', { method: 'POST', body: fd });
+            if (!res.ok) { alert('Fehler bei der Vorschau'); return; }
+            const blob = await res.blob();
+            document.getElementById('previewAudio').src = URL.createObjectURL(blob);
+          });
+        }
+      </script>
+    </main>
+  </body>
+  </html>

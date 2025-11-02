@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block content %}
+{% if message %}
+<div class="bg-emerald-100 border border-emerald-300 text-emerald-800 px-4 py-2 rounded-md">{{ message }}</div>
+{% endif %}
+{% if not models.tts_exists and not models.vocoder_exists %}
+<div class="bg-yellow-100 text-yellow-900 px-4 py-2 rounded-md border border-yellow-300">
+  ⚠️ Kein Modell installiert. Bitte laden Sie ein Modell im Admin‑Bereich herunter.
+  
+</div>
+{% endif %}
+
+<section id="health" class="bg-white dark:bg-gray-800 shadow-md rounded-xl p-6">
+  <h2 class="text-xl font-semibold mb-4">🧠 Systemstatus</h2>
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+    <div>CPU: <span class="font-medium">{{ system.cpu if system.cpu is not none else '-' }}%</span></div>
+    <div>RAM: <span class="font-medium">{{ system.ram if system.ram is not none else '-' }}%</span></div>
+    <div>Disk frei: <span class="font-medium">{{ system.disk_free if system.disk_free is not none else '-' }}%</span></div>
+    <div>Modelle geladen: {% if model_loaded %}✅{% else %}❌{% endif %}</div>
+    <div>Aktiv: {{ models.active.tts or '-' }} / {{ models.active.vocoder or '-' }}</div>
+    <div>Uptime: {{ system.uptime }} s</div>
+  </div>
+  <div class="text-xs text-gray-500 dark:text-gray-400 mt-3">Region: {{ region }} · S3: {{ 'an' if use_s3 else 'aus' }} ({{ bucket or '-' }})</div>
+  <div class="text-xs text-gray-500 dark:text-gray-400">CORS: {{ cors.origins }} · JSON: {{ 'an' if cors.force_json else 'aus' }}</div>
+</section>
+
+<section id="models" class="bg-white dark:bg-gray-800 shadow-md rounded-xl p-6 space-y-4">
+  <h2 class="text-xl font-semibold mb-2">📦 Verfügbare Modelle</h2>
+  {% if download_status and download_status.state == 'running' %}
+    <div class="bg-blue-100 text-blue-900 px-3 py-2 rounded border border-blue-300 mb-2">⏬ {{ download_status.message or 'Modelldownload läuft …' }}</div>
+  {% elif download_status and download_status.state == 'error' %}
+    <div class="bg-red-100 text-red-900 px-3 py-2 rounded border border-red-300 mb-2">❌ {{ download_status.message }}</div>
+  {% elif download_status and download_status.state == 'done' %}
+    <div class="bg-emerald-100 text-emerald-900 px-3 py-2 rounded border border-emerald-300 mb-2">✅ {{ download_status.message }}</div>
+  {% endif %}
+  <div class="grid md:grid-cols-2 gap-3 text-xs text-gray-500 dark:text-gray-400">
+    <div>TTS‑Ordner: <span class="font-mono break-all">{{ models.tts_dir }}</span> — {{ 'vorhanden' if models.tts_exists else 'fehlt' }}</div>
+    <div>Vocoder‑Ordner: <span class="font-mono break-all">{{ models.vocoder_dir }}</span> — {{ 'vorhanden' if models.vocoder_exists else 'fehlt' }}</div>
+  </div>
+  <div class="flex flex-wrap gap-2">
+    <form method="post" action="/admin/download-models"><button class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-md">⬇️ Modelle herunterladen</button></form>
+    <form method="post" action="/admin/clean-models"><button class="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md">🗑️ Modelle löschen</button></form>
+    <form method="post" action="/admin/upload-model" enctype="multipart/form-data" class="flex items-center gap-2">
+      <input type="file" name="model_file" accept=".zip,.tar,.tar.gz,.tgz,.pth,.pth.tar" required class="text-sm" />
+      <button class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-md">📤 Lokales Modell hochladen</button>
+    </form>
+    <form method="post" action="/admin/import-model" class="flex items-center gap-2 flex-1 min-w-[300px]">
+      <input type="text" name="repo_url" placeholder="z. B. tts_models/de/thorsten/tacotron2-DDC oder URL" required class="flex-1 bg-gray-100 dark:bg-gray-700 rounded-md px-3 py-2" />
+      <label class="text-sm flex items-center gap-1"><input type="checkbox" name="force" value="1" /> Force</label>
+      <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-md">🌐 Aus Repository laden</button>
+    </form>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead class="bg-gray-100 dark:bg-gray-700">
+        <tr>
+          <th class="px-3 py-2 text-left">Name</th>
+          <th class="px-3 py-2 text-left">Typ</th>
+          <th class="px-3 py-2 text-left">Info</th>
+          <th class="px-3 py-2 text-right">Aktionen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in models.available %}
+        <tr class="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+          <td class="px-3 py-2">{{ m.name }}</td>
+          <td class="px-3 py-2">{{ m.type }}</td>
+          <td class="px-3 py-2 text-gray-400 text-xs">{{ m.meta.language }} · {{ m.meta.type }} · {{ m.meta.sample_rate }} Hz</td>
+          <td class="px-3 py-2 text-right space-x-2">
+            <form method="post" action="/admin/activate-model" class="inline">
+              <input type="hidden" name="model_name" value="{{ m.name }}">
+              <button class="bg-emerald-500 hover:bg-emerald-600 text-white rounded px-3 py-1">Aktivieren</button>
+            </form>
+            <form method="post" action="/admin/delete-model" class="inline" onsubmit="return confirm('Wirklich löschen?')">
+              <input type="hidden" name="model_name" value="{{ m.name }}">
+              <button class="bg-red-500 hover:bg-red-600 text-white rounded px-3 py-1">🗑️</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="mt-6">
+    <h3 class="text-lg font-semibold mb-2">Aktive Modelle festlegen</h3>
+    <form method="post" action="/admin/set-active-pair" class="grid md:grid-cols-3 gap-3 items-end">
+      <div>
+        <label class="block text-sm mb-1">TTS‑Modell</label>
+        <select name="tts_model" class="w-full bg-gray-100 dark:bg-gray-700 rounded-md px-3 py-2">
+          {% for m in models.available if m.type=='TTS' %}
+          <option value="{{ m.name }}" {% if m.name==models.active.tts %}selected{% endif %}>{{ m.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm mb-1">Vocoder‑Modell</label>
+        <select name="vocoder_model" class="w-full bg-gray-100 dark:bg-gray-700 rounded-md px-3 py-2">
+          {% for m in models.available if m.type=='Vocoder' %}
+          <option value="{{ m.name }}" {% if m.name==models.active.vocoder %}selected{% endif %}>{{ m.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <button class="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded-md">Übernehmen</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<section id="settings" class="bg-white dark:bg-gray-800 shadow-md rounded-xl p-6">
+  <h2 class="text-xl font-semibold mb-4">⚙️ Einstellungen</h2>
+  <form method="post" action="/admin/save" class="space-y-5">
+    <div class="grid md:grid-cols-2 gap-4">
+      <label class="flex items-center space-x-2"><input type="checkbox" name="use_s3" value="1" {% if use_s3 %}checked{% endif %}> <span>S3 verwenden</span></label>
+      <input name="bucket" value="{{ bucket }}" class="w-full bg-gray-100 dark:bg-gray-700 rounded-md px-3 py-2" placeholder="S3 Bucket" />
+    </div>
+    <div class="grid md:grid-cols-3 gap-4">
+      <label class="flex items-center space-x-2"><input type="checkbox" name="force_json" value="1" {% if force_json %}checked{% endif %}> <span>JSON-Antwort erzwingen</span></label>
+      <div><label class="block text-sm mb-1">Max. Wörter</label><input name="max_words" type="number" value="{{ limits.words }}" class="w-full bg-gray-100 dark:bg-gray-700 rounded-md px-3 py-2" /></div>
+      <div><label class="block text-sm mb-1">Max. Zeichen</label><input name="max_chars" type="number" value="{{ limits.chars }}" class="w-full bg-gray-100 dark:bg-gray-700 rounded-md px-3 py-2" /></div>
+    </div>
+    <div class="grid md:grid-cols-3 gap-4">
+      <div><label class="block text-sm mb-1">Rate-Limit max</label><input name="rate_max" type="number" value="{{ limits.rate_max }}" class="w-full bg-gray-100 dark:bg-gray-700 rounded-md px-3 py-2" /></div>
+      <div><label class="block text-sm mb-1">Fenster (s)</label><input name="rate_window" type="number" value="{{ limits.rate_window }}" class="w-full bg-gray-100 dark:bg-gray-700 rounded-md px-3 py-2" /></div>
+    </div>
+    <div class="grid md:grid-cols-3 gap-4">
+      <div><label class="block text-sm mb-1">Max. Zeichen/Chunk</label><input name="chunk_max" type="number" value="{{ chunking.max_chars }}" class="w-full bg-gray-100 dark:bg-gray-700 rounded-md px-3 py-2" /></div>
+      <div><label class="block text-sm mb-1">Min. Zeichen/Chunk</label><input name="chunk_min" type="number" value="{{ chunking.min_chars }}" class="w-full bg-gray-100 dark:bg-gray-700 rounded-md px-3 py-2" /></div>
+      <div><label class="block text-sm mb-1">Pause (Sek.)</label><input name="silence" type="number" step="0.01" value="{{ chunking.silence_sec }}" class="w-full bg-gray-100 dark:bg-gray-700 rounded-md px-3 py-2" /></div>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-md">💾 Speichern</button>
+      <form method="post" action="/admin/flush-limiter"><button type="submit" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md">🧹 Rate-Limiter leeren</button></form>
+      <form method="post" action="/admin/reload-model"><button type="submit" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md">🔁 Modell neu laden ({{ 'geladen' if model_loaded else 'nicht geladen' }})</button></form>
+    </div>
+  </form>
+</section>
+
+<section id="preview" class="bg-white dark:bg-gray-800 shadow-md rounded-xl p-6">
+  <h2 class="text-xl font-semibold mb-4">🔊 Sprach‑Vorschau</h2>
+  <form id="previewForm" method="post" action="/admin/preview" class="space-y-3">
+    <textarea name="preview_text" rows="2" placeholder="Testtext…" class="w-full bg-gray-100 dark:bg-gray-700 rounded-md px-3 py-2"></textarea>
+    <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded-md">▶ Vorschau abspielen</button>
+  </form>
+  <audio id="previewAudio" controls class="mt-4 w-full"></audio>
+  <script>
+    const pf=document.getElementById('previewForm');
+    pf.addEventListener('submit', async(e)=>{
+      e.preventDefault();
+      const fd=new FormData(pf);
+      const res=await fetch('/admin/preview',{method:'POST',body:fd});
+      if(!res.ok){ alert('Fehler bei der Vorschau'); return; }
+      const blob=await res.blob();
+      document.getElementById('previewAudio').src=URL.createObjectURL(blob);
+    });
+  </script>
+</section>
+{% endblock %}

@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<html lang="de" x-data="{dark: localStorage.getItem('dark') === 'true', sidebarOpen: false}"
+  :class="dark ? 'dark' : ''"
+  x-init="$watch('dark', val => localStorage.setItem('dark', val))">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title or 'Plattdeutsch TTS Admin' }}</title>
+    <script src="https:/

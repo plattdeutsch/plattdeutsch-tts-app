@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plattdeutsch TTS</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+        margin: 2rem;
+        max-width: 800px;
+        line-height: 1.5;
+      }
+      h1 { font-size: 1.7rem; margin-bottom: .25rem; }
+      .hint { font-size: .9rem; opacity: .8; margin-bottom: 1.5rem; }
+
+      form { display: grid; gap: .8rem; }
+      textarea {
+        width: 100%;
+        min-height: 10rem;
+        padding: .75rem;
+        font-size: 1rem;
+        resize: vertical;
+      }
+      .buttons {
+        display: flex;
+        gap: 1rem;
+      }
+      button, a.button {
+        padding: .6rem 1.1rem;
+        font-size: 1rem;
+        cursor: pointer;
+        border-radius: 6px;
+        border: 1px solid transparent;
+        background: #2c2c2c;
+        color: #fff;
+        text-decoration: none;
+      }
+      button:hover, a.button:hover { background: #444; }
+      a.button { border-color: currentColor; background: transparent; color: inherit; }
+
+      .result { margin-top: 1rem; }
+      .error { color: #c00; }
+      .ok { color: #090; }
+      audio { display: block; margin-top: 1rem; width: 100%; }
+    </style>
+  </head>
+
+  <body>
+    <h1>Plattdeutsch Text-zu-Sprache</h1>
+    <p class="hint">
+      Geben Sie Ihren Text ein und klicken Sie auf <b>„Sprachdatei erzeugen“</b>.
+    </p>
+
+    <form id="ttsForm">
+      <label for="text">Text</label>
+      <textarea id="text" name="text" placeholder="Hier Text eingeben…"></textarea>
+      <div class="buttons">
+        <button type="submit">🎧 Sprachdatei erzeugen</button>
+        <button type="button" id="clearBtn">🧹 Text löschen</button>
+      </div>
+    </form>
+
+    <div id="status" class="result"></div>
+    <div id="link" class="result"></div>
+    <audio id="player" controls hidden></audio>
+
+    <script>
+      const form = document.getElementById("ttsForm");
+      const statusEl = document.getElementById("status");
+      const linkEl = document.getElementById("link");
+      const player = document.getElementById("player");
+      const clearBtn = document.getElementById("clearBtn");
+
+      clearBtn.addEventListener("click", () => {
+        document.getElementById("text").value = "";
+        statusEl.textContent = "";
+        linkEl.innerHTML = "";
+        player.hidden = true;
+      });
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const text = document.getElementById("text").value.trim();
+        if (!text) {
+          statusEl.textContent = "Bitte geben Sie einen Text ein.";
+          statusEl.className = "result error";
+          return;
+        }
+
+        statusEl.textContent = "🎙️ Erzeuge Audio … bitte warten.";
+        statusEl.className = "result";
+        linkEl.innerHTML = "";
+        player.hidden = true;
+
+        const fd = new FormData(form);
+        try {
+          const resp = await fetch("/synthesize", { method: "POST", body: fd });
+          const ctype = resp.headers.get("content-type") || "";
+
+          if (ctype.includes("application/json")) {
+            const data = await resp.json();
+            if (!resp.ok) {
+              statusEl.textContent = data.error || "Fehler bei der Synthese.";
+              statusEl.className = "result error";
+              return;
+            }
+            // S3 presigned URL
+            statusEl.textContent = "✅ Fertig – Datei auf Server gespeichert:";
+            statusEl.className = "result ok";
+            const a = document.createElement("a");
+            a.href = data.url;
+            a.textContent = "MP3 herunterladen";
+            a.className = "button";
+            a.rel = "noopener noreferrer";
+            linkEl.replaceChildren(a);
+            return;
+          }
+
+          // Local audio blob
+          const blob = await resp.blob();
+          if (!resp.ok) {
+            statusEl.textContent = "Fehler bei der Synthese.";
+            statusEl.className = "result error";
+            return;
+          }
+
+          const url = URL.createObjectURL(blob);
+          statusEl.textContent = "✅ Fertig – Audio bereit:";
+          statusEl.className = "result ok";
+
+          // Download link
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "tts.mp3";
+          a.textContent = "MP3 herunterladen";
+          a.className = "button";
+          linkEl.replaceChildren(a);
+
+          // Inline player
+          player.src = url;
+          player.hidden = false;
+          player.onloadedmetadata = () => {
+            const dur = player.duration.toFixed(1);
+            if (dur && dur !== "NaN")
+              statusEl.textContent += ` (Dauer: ${dur}s)`;
+          };
+          player.play().catch(() => {}); // auto-start if browser allows
+        } catch (err) {
+          statusEl.textContent =
+            "Unerwarteter Fehler: " +
+            (err && err.message ? err.message : String(err));
+          statusEl.className = "result error";
+        }
+      });
+    </script>
+  </body>
+</html>
