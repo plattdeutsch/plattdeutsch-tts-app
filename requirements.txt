@@ -22,3 +22,4 @@ gunicorn==22.0.0
 # Core scientific dependencies
 numpy>=1.24.3
 torch>=2.1.0
+psutil>=5.9
