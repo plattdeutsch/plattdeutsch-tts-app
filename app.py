@@ -1155,6 +1155,7 @@ def admin_preview():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+application = app 
 
 # ==== Run locally ====
 if __name__ == "__main__":
