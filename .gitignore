@@ -5,10 +5,15 @@ __pycache__/
 *.pyd
 *.egg-info/
 
-# Virtual environments
+# Virtual environments (ignore any venv names)
 .venv/
+.venv-*/
 venv/
+venv-*/
 env/
+env-*/
+**/.venv/
+**/.venv-*/
 
 # OS / Editor
 .DS_Store
@@ -27,4 +32,3 @@ node_modules/
 
 # Packaging
 deploy.zip
-

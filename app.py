@@ -118,7 +118,7 @@ _ip_hits = {}
 _auto_downloaded = False
 START_TIME = time.time()
 _model_lock = threading.Lock()
-_download_status = {"state": "idle", "message": ""}
+_download_status = {"state": "idle", "message": "", "percent": 0}
 
 from collections import deque
 
@@ -205,8 +205,10 @@ def _load_tts() -> Tuple[object, int]:
     # Production-safe behavior: do NOT auto-download. Require explicit admin action.
     required = [model_path, config_path, vocoder_path, vocoder_config_path]
     if not all(os.path.exists(p) for p in required):
+        missing = [p for p in required if not os.path.exists(p)]
+        friendly = ", ".join([os.path.relpath(p, start=os.path.dirname(__file__)) for p in missing])
         raise RuntimeError(
-            "Kein Modell installiert. Bitte laden Sie ein Modell im Admin-Bereich herunter."
+            f"Kein Modell installiert oder unvollständig. Fehlende Dateien: {friendly}. Bitte Modelle im Admin‑Bereich herunterladen/importieren."
         )
 
     # Initialize local model
@@ -640,6 +642,26 @@ def admin_page():
         except Exception:
             return {"cpu": None, "ram": None, "disk_free": None, "uptime": int(time.time() - START_TIME)}
 
+    # Compute missing files for currently active pair (if any)
+    def _active_missing_list():
+        try:
+            models_root = os.path.join(base_dir, "models")
+            tts_name = active.get("tts")
+            voc_name = active.get("vocoder")
+            if not (tts_name and voc_name):
+                return []
+            tts_dir_a = os.path.join(models_root, tts_name)
+            voc_dir_a = os.path.join(models_root, voc_name)
+            req = [
+                os.path.join(tts_dir_a, "model_file.pth"),
+                os.path.join(tts_dir_a, "config.json"),
+                os.path.join(voc_dir_a, "model_file.pth.tar"),
+                os.path.join(voc_dir_a, "config.json"),
+            ]
+            return [os.path.relpath(p, start=base_dir) for p in req if not os.path.exists(p)]
+        except Exception:
+            return []
+
     ctx = {
         "use_s3": USE_S3,
         "bucket": S3_BUCKET_NAME,
@@ -672,6 +694,7 @@ def admin_page():
         },
         "download_status": _download_status,
         "system": _system_info(),
+        "active_missing": _active_missing_list(),
     }
     resp = make_response(render_template("admin.html", **ctx))
     return _set_admin_cookie_if_needed(resp)
@@ -765,6 +788,13 @@ def admin_clean_models():
                     removed.append(name)
                 except Exception:
                     pass
+    # Also clear active selection
+    active_file = os.path.join(base_dir, ".active_model.json")
+    try:
+        if os.path.exists(active_file):
+            os.remove(active_file)
+    except Exception:
+        pass
     # Reset loaded model
     global _tts_instance, _tts_samplerate, _auto_downloaded
     with _model_lock:
@@ -790,16 +820,32 @@ def admin_download_models():
 
     def _job(root: str):
         global _download_status
-        _download_status = {"state": "running", "message": "Modelldownload gestartet …"}
+        _download_status = {"state": "running", "message": "Modelldownload gestartet …", "percent": 0}
         try:
             from TTS.utils.manage import ModelManager
             manager = ModelManager()
             manager.output_prefix = root
+            _download_status = {"state": "running", "message": "Lade TTS‑Modell …", "percent": 10}
             manager.download_model("tts_models/de/thorsten/tacotron2-DDC")
+            _download_status = {"state": "running", "message": "Lade Vocoder …", "percent": 55}
             manager.download_model("vocoder_models/de/thorsten/hifigan_v1")
-            _download_status = {"state": "done", "message": "Modelle erfolgreich heruntergeladen."}
+            # Verify integrity of downloaded models
+            tts_dir_v = os.path.join(root, "tts_models--de--thorsten--tacotron2-DDC")
+            voc_dir_v = os.path.join(root, "vocoder_models--de--thorsten--hifigan_v1")
+            checks = [
+                os.path.join(tts_dir_v, "model_file.pth"),
+                os.path.join(tts_dir_v, "config.json"),
+                os.path.join(voc_dir_v, "model_file.pth.tar"),
+                os.path.join(voc_dir_v, "config.json"),
+            ]
+            _download_status = {"state": "running", "message": "Prüfe Dateien …", "percent": 90}
+            missing = [os.path.relpath(p, start=os.path.dirname(__file__)) for p in checks if not os.path.exists(p)]
+            if missing:
+                _download_status = {"state": "error", "message": f"Unvollständiger Download. Fehlend: {', '.join(missing)}", "percent": 0}
+            else:
+                _download_status = {"state": "done", "message": "Modelle erfolgreich heruntergeladen.", "percent": 100}
         except Exception as e:
-            _download_status = {"state": "error", "message": f"Fehler beim Download: {e}"}
+            _download_status = {"state": "error", "message": f"Fehler beim Download: {e}", "percent": 0}
 
     threading.Thread(target=_job, args=(out_path,), daemon=True).start()
     return redirect(url_for("admin_page", msg="Modelldownload gestartet – bitte einige Minuten warten."))
@@ -1154,6 +1200,42 @@ def admin_preview():
         return send_file(io.BytesIO(mp3_bytes), mimetype="audio/mpeg", as_attachment=False)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.get("/admin/download-status")
+def admin_download_status():
+    if not _admin_token() or not _is_admin_request():
+        return ("Nicht autorisiert", 403)
+    return jsonify(_download_status)
+
+
+@app.get("/admin/verify-models")
+def admin_verify_models():
+    if not _admin_token() or not _is_admin_request():
+        return ("Nicht autorisiert", 403)
+    base_dir = os.path.dirname(__file__)
+    models_root = os.path.join(base_dir, "models")
+    results = []
+    try:
+        for name in sorted(os.listdir(models_root)):
+            if not (name.startswith("tts_models--") or name.startswith("vocoder_models--")):
+                continue
+            path = os.path.join(models_root, name)
+            if name.startswith("tts_models--"):
+                req = [os.path.join(path, "model_file.pth"), os.path.join(path, "config.json")]
+            else:
+                req = [os.path.join(path, "model_file.pth.tar"), os.path.join(path, "config.json")]
+            missing = [os.path.relpath(p, start=base_dir) for p in req if not os.path.exists(p)]
+            results.append({
+                "name": name,
+                "type": "TTS" if name.startswith("tts_models--") else "Vocoder",
+                "path": os.path.relpath(path, start=base_dir),
+                "ok": len(missing) == 0,
+                "missing": missing,
+            })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"items": results})
 
 
 # ==== Run locally ====

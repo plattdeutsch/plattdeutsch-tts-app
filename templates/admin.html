@@ -9,6 +9,11 @@
   
 </div>
 {% endif %}
+{% if active_missing and active_missing|length > 0 %}
+<div class="bg-yellow-100 text-yellow-900 px-4 py-2 rounded-md border border-yellow-300 mt-2">
+  ⚠️ Aktives Modell unvollständig. Fehlende Dateien: {{ ', '.join(active_missing) }}
+ </div>
+{% endif %}
 
 <section id="health" class="bg-white dark:bg-gray-800 shadow-md rounded-xl p-6">
   <h2 class="text-xl font-semibold mb-4">🧠 Systemstatus</h2>
@@ -27,29 +32,47 @@
 <section id="models" class="bg-white dark:bg-gray-800 shadow-md rounded-xl p-6 space-y-4">
   <h2 class="text-xl font-semibold mb-2">📦 Verfügbare Modelle</h2>
   {% if download_status and download_status.state == 'running' %}
-    <div class="bg-blue-100 text-blue-900 px-3 py-2 rounded border border-blue-300 mb-2">⏬ {{ download_status.message or 'Modelldownload läuft …' }}</div>
+    <div class="bg-blue-50 text-blue-900 px-3 py-3 rounded border border-blue-200 mb-2">
+      <div class="text-sm font-medium">Modelldownload läuft …</div>
+      <div class="mt-2 w-full h-2 bg-blue-100 rounded overflow-hidden">
+        <div id="dlBar" class="h-2 bg-blue-600 rounded" style="width: {{ download_status.percent or 0 }}%"></div>
+      </div>
+      <div id="dlStatus" class="mt-2 text-sm">{{ download_status.message or 'Wird vorbereitet …' }}</div>
+      <div class="flex flex-wrap gap-2 mt-2 text-xs">
+        <span id="ms10" class="px-2 py-0.5 rounded bg-gray-200 text-gray-700">Start TTS</span>
+        <span id="ms55" class="px-2 py-0.5 rounded bg-gray-200 text-gray-700">Start Vocoder</span>
+        <span id="ms90" class="px-2 py-0.5 rounded bg-gray-200 text-gray-700">Verifizierung</span>
+        <span id="ms100" class="px-2 py-0.5 rounded bg-gray-200 text-gray-700">Abschluss</span>
+      </div>
+    </div>
   {% elif download_status and download_status.state == 'error' %}
-    <div class="bg-red-100 text-red-900 px-3 py-2 rounded border border-red-300 mb-2">❌ {{ download_status.message }}</div>
+    <div class="bg-red-50 text-red-900 px-3 py-2 rounded border border-red-200 mb-2">{{ download_status.message }}</div>
   {% elif download_status and download_status.state == 'done' %}
-    <div class="bg-emerald-100 text-emerald-900 px-3 py-2 rounded border border-emerald-300 mb-2">✅ {{ download_status.message }}</div>
+    <div class="bg-emerald-50 text-emerald-900 px-3 py-2 rounded border border-emerald-200 mb-2">{{ download_status.message }}</div>
   {% endif %}
   <div class="grid md:grid-cols-2 gap-3 text-xs text-gray-500 dark:text-gray-400">
     <div>TTS‑Ordner: <span class="font-mono break-all">{{ models.tts_dir }}</span> — {{ 'vorhanden' if models.tts_exists else 'fehlt' }}</div>
     <div>Vocoder‑Ordner: <span class="font-mono break-all">{{ models.vocoder_dir }}</span> — {{ 'vorhanden' if models.vocoder_exists else 'fehlt' }}</div>
   </div>
-  <div class="flex flex-wrap gap-2">
-    <form method="post" action="/admin/download-models"><button class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-md">⬇️ Modelle herunterladen</button></form>
-    <form method="post" action="/admin/clean-models"><button class="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md">🗑️ Modelle löschen</button></form>
-    <form method="post" action="/admin/upload-model" enctype="multipart/form-data" class="flex items-center gap-2">
-      <input type="file" name="model_file" accept=".zip,.tar,.tar.gz,.tgz,.pth,.pth.tar" required class="text-sm" />
-      <button class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-md">📤 Lokales Modell hochladen</button>
-    </form>
-    <form method="post" action="/admin/import-model" class="flex items-center gap-2 flex-1 min-w-[300px]">
-      <input type="text" name="repo_url" placeholder="z. B. tts_models/de/thorsten/tacotron2-DDC oder URL" required class="flex-1 bg-gray-100 dark:bg-gray-700 rounded-md px-3 py-2" />
-      <label class="text-sm flex items-center gap-1"><input type="checkbox" name="force" value="1" /> Force</label>
-      <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-md">🌐 Aus Repository laden</button>
-    </form>
+  <div class="space-y-3">
+    <div class="flex flex-wrap gap-2">
+      <form method="post" action="/admin/download-models"><button class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-md">Modelle herunterladen</button></form>
+      <button id="verifyBtn" class="bg-gray-700 hover:bg-gray-800 text-white px-3 py-2 rounded-md" type="button">Modelle prüfen</button>
+      <form method="post" action="/admin/clean-models"><button class="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md">Modelle löschen</button></form>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <form method="post" action="/admin/upload-model" enctype="multipart/form-data" class="flex items-center gap-2">
+        <input type="file" name="model_file" accept=".zip,.tar,.tar.gz,.tgz,.pth,.pth.tar" required class="text-sm" />
+        <button class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-md">Lokales Modell hochladen</button>
+      </form>
+      <form method="post" action="/admin/import-model" class="flex items-center gap-2 flex-1 min-w-[300px]">
+        <input type="text" name="repo_url" placeholder="z. B. tts_models/de/thorsten/tacotron2-DDC oder URL" required class="flex-1 bg-gray-100 dark:bg-gray-700 rounded-md px-3 py-2" />
+        <label class="text-sm flex items-center gap-1"><input type="checkbox" name="force" value="1" /> Force</label>
+        <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-md">Aus Repository laden</button>
+      </form>
+    </div>
   </div>
+  <div id="verifyOut" class="text-xs text-gray-600 dark:text-gray-400"></div>
   <div class="overflow-x-auto">
     <table class="min-w-full text-sm">
       <thead class="bg-gray-100 dark:bg-gray-700">
@@ -69,11 +92,11 @@
           <td class="px-3 py-2 text-right space-x-2">
             <form method="post" action="/admin/activate-model" class="inline">
               <input type="hidden" name="model_name" value="{{ m.name }}">
-              <button class="bg-emerald-500 hover:bg-emerald-600 text-white rounded px-3 py-1">Aktivieren</button>
+              <button class="bg-emerald-600 hover:bg-emerald-700 text-white rounded px-3 py-1">Aktivieren</button>
             </form>
             <form method="post" action="/admin/delete-model" class="inline" onsubmit="return confirm('Wirklich löschen?')">
               <input type="hidden" name="model_name" value="{{ m.name }}">
-              <button class="bg-red-500 hover:bg-red-600 text-white rounded px-3 py-1">🗑️</button>
+              <button class="bg-red-600 hover:bg-red-700 text-white rounded px-3 py-1">Löschen</button>
             </form>
           </td>
         </tr>
@@ -106,6 +129,67 @@
     </form>
   </div>
 </section>
+
+<script>
+  // Poll download status while running
+  async function pollDownload(){
+    try{
+      const res = await fetch('/admin/download-status');
+      if(!res.ok) return;
+      const j = await res.json();
+      if(j.state === 'running'){
+        const bar = document.getElementById('dlBar');
+        if(bar){ bar.style.width = (j.percent||0)+'%'; }
+        const st = document.getElementById('dlStatus');
+        if(st){ st.textContent = j.message || ''; }
+        // milestone coloring
+        const ms = [
+          {id:'ms10', th:10},
+          {id:'ms55', th:55},
+          {id:'ms90', th:90},
+          {id:'ms100', th:100}
+        ];
+        for(const m of ms){
+          const el = document.getElementById(m.id);
+          if(!el) continue;
+          el.classList.remove('bg-gray-200','text-gray-700','bg-blue-200','text-blue-800','bg-emerald-200','text-emerald-800');
+          if((j.percent||0) >= m.th){
+            el.classList.add('bg-emerald-200','text-emerald-800'); // done
+          }else{
+            const prevIndex = ms.findIndex(x=>x.id===m.id)-1;
+            const lower = prevIndex>=0 ? ms[prevIndex].th : 0;
+            if((j.percent||0) > lower){
+              el.classList.add('bg-blue-200','text-blue-800'); // in progress
+            }else{
+              el.classList.add('bg-gray-200','text-gray-700'); // upcoming
+            }
+          }
+        }
+        setTimeout(pollDownload, 1000);
+      }
+    }catch(e){ /* ignore */ }
+  }
+  if(document.getElementById('dlBar')){ setTimeout(pollDownload, 800); }
+
+  // Verify models button
+  const vb = document.getElementById('verifyBtn');
+  if(vb){
+    vb.addEventListener('click', async()=>{
+      const out = document.getElementById('verifyOut');
+      out.textContent = 'Prüfe Modelle …';
+      try{
+        const res = await fetch('/admin/verify-models');
+        const j = await res.json();
+        if(!res.ok){ out.textContent = 'Fehler: '+(j.error||res.statusText); return; }
+        if(!j.items || !j.items.length){ out.textContent = 'Keine Modelle gefunden.'; return; }
+        const lines = j.items.map(it=>{
+          return `${it.ok?'✅':'⚠️'} ${it.type}: ${it.name} ${it.ok?'':'— fehlt: '+it.missing.join(', ')}`;
+        });
+        out.innerHTML = '<pre class="whitespace-pre-wrap">'+lines.join('\n')+'</pre>';
+      }catch(e){ out.textContent = 'Fehler: '+e; }
+    });
+  }
+</script>
 
 <section id="settings" class="bg-white dark:bg-gray-800 shadow-md rounded-xl p-6">
   <h2 class="text-xl font-semibold mb-4">⚙️ Einstellungen</h2>
