@@ -1201,6 +1201,7 @@ def admin_preview():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+application = app 
 
 @app.get("/admin/download-status")
 def admin_download_status():

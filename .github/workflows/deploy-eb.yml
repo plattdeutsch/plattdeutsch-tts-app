@@ -1,4 +1,5 @@
-name: Deploy to Elastic Beanstalk
+name: Deploy to AWS Elastic Beanstalk
+
 on:
   push:
     branches: [ "main" ]
@@ -13,8 +14,9 @@ jobs:
     concurrency:
       group: eb-deploy-${{ github.ref }}
       cancel-in-progress: true
-    # If you store secrets in a GitHub Environment (not repository secrets), set it here.
+    # If you use GitHub Environments for secrets, set the environment name:
     # environment: production
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,7 +42,7 @@ jobs:
       - name: Create deployment package
         run: |
           zip -r deploy.zip . \
-            -x "*.git*" "*.venv*" "*venv*" "models/*" "__pycache__/*" "*.pyc" "*.pyo" \
+            -x "*.git*" "*.venv*" "*venv*" "models/*" "__pycache__/*" \
                "node_modules/*" "deploy.zip" ".github/*"
 
       - name: Configure AWS credentials
@@ -55,6 +57,6 @@ jobs:
         with:
           application_name: ${{ secrets.EB_APP_NAME }}
           environment_name: ${{ secrets.EB_ENV_NAME }}
-          version_label: v-${{ github.run_number }}-${{ github.sha }}
           region: ${{ secrets.AWS_REGION }}
+          version_label: v-eb-${{ github.run_number }}-${{ github.sha }}
           deployment_package: deploy.zip
