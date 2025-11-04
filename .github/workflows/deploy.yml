@@ -5,26 +5,44 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     concurrency:
       group: eb-deploy-${{ github.ref }}
       cancel-in-progress: true
+    # If you store secrets in a GitHub Environment (not repository secrets), set it here.
+    # environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python (CI only)
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      - name: Validate required secrets
+        env:
+          HAS_AKID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          HAS_SAK: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          HAS_REGION: ${{ secrets.AWS_REGION }}
+          HAS_APP: ${{ secrets.EB_APP_NAME }}
+          HAS_ENV: ${{ secrets.EB_ENV_NAME }}
+        run: |
+          for v in HAS_AKID HAS_SAK HAS_REGION HAS_APP HAS_ENV; do
+            if [ -z "${!v}" ]; then echo "::error::Missing secret $v"; exit 1; fi
+          done
+          echo "All required secrets are present."
+
       - name: Create deployment package
         run: |
           zip -r deploy.zip . \
-            -x "*.git*" "*.venv*" "models/*" "__pycache__/*" "*.pyc" "*.pyo" \
-               "node_modules/*" "deploy.zip"
+            -x "*.git*" "*.venv*" "*venv*" "models/*" "__pycache__/*" "*.pyc" "*.pyo" \
+               "node_modules/*" "deploy.zip" ".github/*"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
