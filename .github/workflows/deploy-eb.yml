@@ -3,37 +3,60 @@ name: Deploy to AWS Elastic Beanstalk
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch:  # erlaubt manuelles Starten über GitHub UI
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    concurrency:
+      group: eb-deploy-${{ github.ref }}
+      cancel-in-progress: true
+    # If you use GitHub Environments for secrets, set the environment name:
+    # environment: production
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python (CI only)
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install Dependencies
+      - name: Validate required secrets
+        env:
+          HAS_AKID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          HAS_SAK: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          HAS_REGION: ${{ secrets.AWS_REGION }}
+          HAS_APP: ${{ secrets.EB_APP_NAME }}
+          HAS_ENV: ${{ secrets.EB_ENV_NAME }}
         run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          for v in HAS_AKID HAS_SAK HAS_REGION HAS_APP HAS_ENV; do
+            if [ -z "${!v}" ]; then echo "::error::Missing secret $v"; exit 1; fi
+          done
+          echo "All required secrets are present."
 
-      - name: Create Deployment Package
+      - name: Create deployment package
         run: |
-          zip -r app.zip . -x "*.git*" "*.venv*" "__pycache__/*" ".github/*"
+          zip -r deploy.zip . \
+            -x "*.git*" "*.venv*" "*venv*" "models/*" "__pycache__/*" \
+               "node_modules/*" "deploy.zip" ".github/*"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Deploy to Elastic Beanstalk
         uses: einaregilsson/beanstalk-deploy@v22
         with:
-          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          application_name: plattdeutsch-tts-app
-          environment_name: plattdeutsch-tts-app-env   # 🔹 aktualisierter Name
-          region: eu-central-1
-          version_label: v-${{ github.run_number }}
-          deployment_package: app.zip
+          application_name: ${{ secrets.EB_APP_NAME }}
+          environment_name: ${{ secrets.EB_ENV_NAME }}
+          region: ${{ secrets.AWS_REGION }}
+          version_label: v-eb-${{ github.run_number }}-${{ github.sha }}
+          deployment_package: deploy.zip
