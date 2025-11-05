@@ -28,11 +28,8 @@ jobs:
         env:
           HAS_AKID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           HAS_SAK: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          HAS_REGION: ${{ secrets.AWS_REGION }}
-          HAS_APP: ${{ secrets.EB_APP_NAME }}
-          HAS_ENV: ${{ secrets.EB_ENV_NAME }}
         run: |
-          for v in HAS_AKID HAS_SAK HAS_REGION HAS_APP HAS_ENV; do
+          for v in HAS_AKID HAS_SAK; do
             if [ -z "${!v}" ]; then echo "::error::Missing secret $v"; exit 1; fi
           done
           echo "All required secrets are present."
@@ -48,15 +45,24 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: eu-central-1
+
+      - name: Check environment status
+        run: |
+          aws elasticbeanstalk describe-environments \
+            --application-name plattdeutsch-tts-app \
+            --environment-names Plattdeutsch-tts-app-env \
+            --region eu-central-1 \
+            --query 'Environments[0].Status' --output text
 
       - name: Deploy to Elastic Beanstalk
         uses: einaregilsson/beanstalk-deploy@v22
         with:
           aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          application_name: ${{ secrets.EB_APP_NAME }}
-          environment_name: ${{ secrets.EB_ENV_NAME }}
+          application_name: plattdeutsch-tts-app
+          environment_name: Plattdeutsch-tts-app-env
           version_label: v-${{ github.run_number }}-${{ github.sha }}
-          region: ${{ secrets.AWS_REGION }}
+          region: eu-central-1
           deployment_package: deploy.zip
+          wait_for_deployment: true
