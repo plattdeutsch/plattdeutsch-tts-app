@@ -22,7 +22,11 @@ from TTS.utils.radam import RAdam  # 👈 required for newer PyTorch versions
 
 
 # ==== PyTorch safety patch (for 2.6+) ====
-torch.serialization.add_safe_globals([RAdam, dict])
+try:
+    torch.serialization.add_safe_globals([RAdam, dict])
+except AttributeError:
+    # Older PyTorch versions don't have add_safe_globals
+    pass
 
 # ==== Flask setup ====
 app = Flask(__name__)
